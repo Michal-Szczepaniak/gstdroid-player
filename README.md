@@ -4,4 +4,4 @@ This is an example of how you use GstDroid directly in an application which is u
 This is heavily based on the example player in Foolab's gst-droid upstream with just a sailfish application wrapper around it
 
 ## How to Use
-the application needs to be run by command line and given a full path to a media file you'd like it to play
+The application will try and play whatever is passed on command line arguments, or if none are supplied it will try and play the Sintel trailer from the internet
