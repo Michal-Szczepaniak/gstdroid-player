@@ -10,7 +10,7 @@
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the GNU
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Library General Public License for more details.
  *
  * You should have received a copy of the GNU Library General Public
@@ -19,7 +19,7 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "player.h"
+#include "videoplayer.h"
 #include <QQmlInfo>
 #include <QTimer>
 #include "renderer.h"
@@ -30,7 +30,12 @@
 VideoPlayer::VideoPlayer(QQuickItem *parent) :
     QQuickPaintedItem(parent),
     m_renderer(0),
-    m_bin(0),
+    m_vsrc(0),
+    m_asrc(0),
+    m_vdecode(0),
+    m_adecode(0),
+    m_pipeline(0),
+    m_bus(0),
     m_state(VideoPlayer::StateStopped),
     m_timer(new QTimer(this)),
     m_pos(0),
@@ -51,10 +56,8 @@ VideoPlayer::~VideoPlayer() {
     stop();
     m_audio_resource.release();
 
-    if (m_bin) {
-        gst_object_unref(m_bin);
-        m_bin = 0;
-    }
+    gst_element_set_state (m_pipeline, GST_STATE_NULL);
+    gst_object_unref (GST_OBJECT (m_pipeline));
 }
 
 void VideoPlayer::componentComplete() {
@@ -64,45 +67,92 @@ void VideoPlayer::componentComplete() {
 void VideoPlayer::classBegin() {
     QQuickPaintedItem::classBegin();
 
-    m_bin = gst_element_factory_make ("playbin", "VideoPlayerBin");
-    if (!m_bin) {
-        qmlInfo(this) << "Failed to create playbin";
+    m_pipeline = gst_pipeline_new ("pipeline");
+    loop = g_main_loop_new (NULL, FALSE);
+
+    m_bus = gst_pipeline_get_bus (GST_PIPELINE (m_pipeline));
+    gst_bus_add_watch (m_bus, bus_call, this);
+    gst_object_unref (m_bus);
+
+    m_vsrc = gst_element_factory_make ("souphttpsrc", "VideoSrc");
+    if (!m_vsrc) {
+        qmlInfo(this) << "Failed to create VideoSrc";
         return;
     }
 
-    g_signal_connect (G_OBJECT (m_bin), "notify::volume", G_CALLBACK (on_volume_changed), this);
-
-    GstElement *elem = gst_element_factory_make("pulsesink", "VideoPlayerPulseSink");
-    if (!elem) {
-        qmlInfo(this) << "Failed to create pulsesink";
-    }
-    else {
-        g_object_set (m_bin, "audio-sink", elem, NULL);
+    m_asrc = gst_element_factory_make ("souphttpsrc", "AudioSrc");
+    if (!m_asrc) {
+        qmlInfo(this) << "Failed to create AudioSrc";
+        return;
     }
 
-    GstBus *bus = gst_element_get_bus(m_bin);
-    gst_bus_add_watch(bus, bus_call, this);
-    gst_object_unref(bus);
+    m_vdecode = gst_element_factory_make ("decodebin", "VideoDecoder");
+    if (!m_vdecode) {
+        qmlInfo(this) << "Failed to create VideoDecoder";
+        return;
+    }
+
+    m_adecode = gst_element_factory_make ("decodebin", "AudioDecoder");
+    if (!m_adecode) {
+        qmlInfo(this) << "Failed to create AudioDecoder";
+        return;
+    }
+
+    QString string = "https://download.blender.org/durian/trailer/sintel_trailer-480p.ogv";
+    QByteArray array = string.toUtf8();
+    g_object_set(m_vsrc, "location", array.constData(), NULL);
+
+    string = "https://download.blender.org/durian/trailer/sintel_trailer-480p.ogv";
+    array = string.toUtf8();
+    g_object_set(m_asrc, "location", array.constData(), NULL);
+
+//    g_signal_connect (G_OBJECT (m_pipeline), "notify::volume", G_CALLBACK (on_volume_changed), this);
+
+    gst_bin_add_many (GST_BIN (m_pipeline), m_vsrc, /*m_asrc, */m_vdecode, /*m_adecode, */NULL);
+
+    gst_element_link (m_vsrc, m_vdecode);
+//    gst_element_link (m_asrc, m_adecode);
+
+//    GstElement *elem = gst_element_factory_make("pulsesink", "VideoPlayerPulseSink");
+//    qDebug() << elem;
+//    g_signal_connect (m_adecode, "pad-added", G_CALLBACK (cb_new_pad), elem);
+//    gst_bin_add(GST_BIN (m_pipeline), elem);
+
+//    GstElement *elem = gst_element_factory_make("pulsesink", "VideoPlayerPulseSink");
+//    g_signal_connect (m_adecode, "pad-added", G_CALLBACK (cb_new_pad), elem);
 }
 
-QUrl VideoPlayer::source() const {
-    return m_url;
+QUrl VideoPlayer::videoStreamUrl() const {
+    return m_videoStreamUrl;
 }
 
-void VideoPlayer::setSource(const QUrl& source) {
-    if (m_url != source) {
-        m_url = source;
-        emit sourceChanged();
+QUrl VideoPlayer::audioStreamUrl() const {
+    return m_audioStreamUrl;
+}
+
+void VideoPlayer::setVideoStreamUrl(const QUrl& source) {
+    if (m_videoStreamUrl != source) {
+        m_videoStreamUrl = source;
+        QString string = m_videoStreamUrl.toString();
+        QByteArray array = string.toUtf8();
+        g_object_set(m_vsrc, "location", array.constData(), NULL);
+        emit videoStreamUrlChanged();
+    }
+}
+
+void VideoPlayer::setAudioStreamUrl(const QUrl& source) {
+    if (m_audioStreamUrl != source) {
+        m_audioStreamUrl = source;
+        QString string = m_audioStreamUrl.toString();
+        QByteArray array = string.toUtf8();
+        g_object_set(m_asrc, "location", array.constData(), NULL);
+        emit audioStreamUrlChanged();
     }
 }
 
 qint64 VideoPlayer::duration() const {
-    if (!m_bin) {
-        return 0;
-    }
-
     qint64 dur = 0;
-    if (!gst_element_query_duration(m_bin, GST_FORMAT_TIME, &dur)) {
+    if (!gst_element_query_duration(m_pipeline, GST_FORMAT_TIME, &dur)) {
         return 0;
     }
 
@@ -112,12 +162,8 @@ qint64 VideoPlayer::duration() const {
 }
 
 qint64 VideoPlayer::position() {
-    if (!m_bin) {
-        return 0;
-    }
-
     qint64 pos = 0;
-    if (!gst_element_query_position(m_bin, GST_FORMAT_TIME, &pos)) {
+    if (!gst_element_query_position(m_pipeline, GST_FORMAT_TIME, &pos)) {
         return m_pos;
     }
 
@@ -144,36 +190,28 @@ bool VideoPlayer::play() {
             return false;
         }
 
+
         QObject::connect(m_renderer, SIGNAL(updateRequested()), this, SLOT(updateRequested()));
     }
 
     m_renderer->resize(QSizeF(width(), height()));
 
-    if (!m_bin) {
-        qmlInfo(this) << "no playbin";
-        return false;
-    }
 
     qDebug() << "AudioResource: " << m_audio_resource.isAcquired();
 
-    g_object_set(m_bin, "video-sink", m_renderer->sinkElement(), NULL);
+    gst_bin_add(GST_BIN (m_pipeline), m_renderer->sinkElement());
+    g_signal_connect (m_vdecode, "pad-added", G_CALLBACK (cb_new_pad), m_renderer->sinkElement());
 
-    qDebug() << "1";
     return setState(VideoPlayer::StatePlaying);
 }
 
 bool VideoPlayer::seek(qint64 offset) {
-    if (!m_bin) {
-        qmlInfo(this) << "no playbin2";
-        return false;
-    }
-
     qint64 pos = offset;
 
     offset *= 1000000;
 
     GstSeekFlags flags = (GstSeekFlags)(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE);
-    gboolean ret = gst_element_seek_simple (m_bin, GST_FORMAT_TIME,
+    gboolean ret = gst_element_seek_simple (m_pipeline, GST_FORMAT_TIME,
                                             flags, offset);
 
     if (ret) {
@@ -223,61 +261,42 @@ VideoPlayer::State VideoPlayer::state() const {
 }
 
 bool VideoPlayer::setPaused(int flags) {
-    qDebug() << "4.2";
-    g_object_set (m_bin, "flags", flags, NULL);
-    qDebug() << "4.3";
 
-    if (gst_element_set_state(m_bin, GST_STATE_PAUSED) == GST_STATE_CHANGE_FAILURE) {
+    if (gst_element_set_state(m_pipeline, GST_STATE_PAUSED) == GST_STATE_CHANGE_FAILURE) {
         qmlInfo(this) << "error setting pipeline to PAUSED";
         return false;
     }
-    qDebug() << "4.4";
 
-    GstBus *bus = gst_element_get_bus(m_bin);
-    qDebug() << "4.5";
     GstMessage *message =
-        gst_bus_timed_pop_filtered(bus, GST_CLOCK_TIME_NONE,
-                                     (GstMessageType)(GST_MESSAGE_ASYNC_DONE | GST_MESSAGE_ERROR));
-    qDebug() << "4.6";
+            gst_bus_timed_pop_filtered(m_bus, GST_CLOCK_TIME_NONE,
+                                       (GstMessageType)(GST_MESSAGE_ASYNC_DONE | GST_MESSAGE_ERROR));
 
-    qDebug() << "4.7";
     if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR) {
         gst_message_unref (message);
-        gst_object_unref(bus);
-        gst_element_set_state(m_bin, GST_STATE_NULL);
-        qDebug() << "4.7-exit";
+        gst_element_set_state(m_pipeline, GST_STATE_NULL);
         return false;
     }
 
     gst_message_unref (message);
-    gst_object_unref(bus);
-
-    qDebug() << "4.8";
     return true;
 }
 
 bool VideoPlayer::setState(const VideoPlayer::State& state) {
-    qDebug() << "2";
     if (state == m_state) {
         return true;
-    }
-
-    if (!m_bin) {
-        qmlInfo(this) << "no playbin2";
-        return false;
     }
 
     if (state == VideoPlayer::StatePaused) {
         m_timer->stop();
 
-        if (gst_element_set_state(m_bin, GST_STATE_PAUSED) == GST_STATE_CHANGE_FAILURE) {
+        if (gst_element_set_state(m_pipeline, GST_STATE_PAUSED) == GST_STATE_CHANGE_FAILURE) {
             qmlInfo(this) << "error setting pipeline to PAUSED";
             return false;
         }
 
         GstState st;
-        if (gst_element_get_state(m_bin, &st, NULL, GST_CLOCK_TIME_NONE)
-        == GST_STATE_CHANGE_FAILURE) {
+        if (gst_element_get_state(m_pipeline, &st, NULL, GST_CLOCK_TIME_NONE)
+                == GST_STATE_CHANGE_FAILURE) {
             qmlInfo(this) << "setting pipeline to PAUSED failed";
             return false;
         }
@@ -293,32 +312,10 @@ bool VideoPlayer::setState(const VideoPlayer::State& state) {
         return true;
     }
     else if (state == VideoPlayer::StatePlaying) {
-        qDebug() << "3";
-        // Set uri if needed:
-        if (m_state == VideoPlayer::StateStopped) {
-            QString string = m_url.toString();
-            QByteArray array = string.toUtf8();
-            g_object_set(m_bin, "uri", array.constData(), NULL);
-            qDebug() << "4.1";
-
-            int flags = 0x00000001 | 0x00000002 | 0x00000010 | 0x00000020 |    0x00000200;
-            if (!setPaused (flags)) {
-                    flags |= 0x00000040;
-
-                    if (!setPaused (flags)) {
-                            qmlInfo(this) << "error setting pipeline to PAUSED";
-                            return false;
-                    }
-                    qDebug() << "4.4";
-            }
+        if (gst_element_set_state(m_pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
+            qmlInfo(this) << "error setting pipeline to PLAYING";
+            return false;
         }
-        qDebug() << "4";
-
-        if (gst_element_set_state(m_bin, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
-                qmlInfo(this) << "error setting pipeline to PLAYING";
-                return false;
-        }
-        qDebug() << "5";
 
         m_state = state;
         emit stateChanged();
@@ -327,7 +324,6 @@ bool VideoPlayer::setState(const VideoPlayer::State& state) {
         emit positionChanged();
 
         m_timer->start();
-        qDebug() << "6";
         return true;
     }
     else {
@@ -337,14 +333,14 @@ bool VideoPlayer::setState(const VideoPlayer::State& state) {
         delete m_renderer;
         m_renderer = 0;
 
-        if (gst_element_set_state(m_bin, GST_STATE_NULL) == GST_STATE_CHANGE_FAILURE) {
+        if (gst_element_set_state(m_pipeline, GST_STATE_NULL) == GST_STATE_CHANGE_FAILURE) {
             qmlInfo(this) << "error setting pipeline to NULL";
             return false;
         }
 
         GstState st;
-        if (gst_element_get_state(m_bin, &st, NULL, GST_CLOCK_TIME_NONE)
-        == GST_STATE_CHANGE_FAILURE) {
+        if (gst_element_get_state(m_pipeline, &st, NULL, GST_CLOCK_TIME_NONE)
+                == GST_STATE_CHANGE_FAILURE) {
             qmlInfo(this) << "setting pipeline to NULL failed";
             return false;
         }
@@ -373,25 +369,16 @@ gboolean VideoPlayer::bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
     GError *err = NULL;
 
     switch (GST_MESSAGE_TYPE(msg)) {
-    case GST_MESSAGE_BUFFERING:
-    {
-            gint percent = 0;
-            gst_message_parse_buffering (msg, &percent);
-            qDebug() << "buffering " << percent;
-            if (percent < 100) that->pause();
-            else that->play();
-    }
-            break;
     case GST_MESSAGE_EOS:
         that->stop();
         break;
 
     case GST_MESSAGE_ERROR:
         gst_message_parse_error (msg, &err, &debug);
-        qWarning() << "Error" << err->message;
+        qWarning() << "Error" << err->message << err->code;
 
-        emit that->error(err->message, err->code, debug);
-        that->stop();
+//        emit that->error(QString::fromUtf8(err->message), (int)err->code, debug);
+//        that->stop();
 
         if (err) {
             g_error_free (err);
@@ -410,13 +397,28 @@ gboolean VideoPlayer::bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
     return TRUE;
 }
 
+void VideoPlayer::cb_new_pad (GstElement *element, GstPad *pad, gpointer data)
+{
+  gchar *name;
+  GstElement *other = (GstElement*)data;
+
+  name = gst_pad_get_name (pad);
+  g_print ("A new pad %s was created for %s\n", name, gst_element_get_name(element));
+  g_free (name);
+
+  g_print ("element %s will be linked to %s\n",
+           gst_element_get_name(element),
+           gst_element_get_name(other));
+  gst_element_link(element, other);
+}
+
 void VideoPlayer::updateRequested() {
     update();
 }
 
 quint32 VideoPlayer::volume() {
     double vol = 1.0;
-    g_object_get (m_bin, "volume", &vol, NULL);
+    g_object_get (m_pipeline, "volume", &vol, NULL);
 
     qint32 res = (int)round(vol * 100.0);
 
@@ -426,7 +428,7 @@ quint32 VideoPlayer::volume() {
 void VideoPlayer::setVolume(quint32 volume) {
     if (VideoPlayer::volume() != volume) {
         double vol = volume / 100.0;
-        g_object_set (m_bin, "volume", vol, NULL);
+        g_object_set (m_pipeline, "volume", vol, NULL);
         emit volumeChanged();
     }
 }

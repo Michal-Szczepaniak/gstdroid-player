@@ -11,7 +11,7 @@
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the GNU
  * Library General Public License for more details.
  *
  * You should have received a copy of the GNU Library General Public
@@ -29,60 +29,76 @@
 #include <QMatrix4x4>
 #include <QtOpenGL/qgl.h>
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <gst/video/gstvideometa.h>
 
 class QGLShaderProgram;
 class QOpenGLExtension_OES_EGL_image;
 
 class QtCamViewfinderRendererNemo : public QtCamViewfinderRenderer {
-  Q_OBJECT
+    Q_OBJECT
 
 public:
-  QtCamViewfinderRendererNemo(QObject *parent = 0);
+    QtCamViewfinderRendererNemo(QObject *parent = 0);
 
-  ~QtCamViewfinderRendererNemo();
+    ~QtCamViewfinderRendererNemo();
 
-  virtual void paint(const QMatrix4x4& matrix, const QRectF& viewport);
-  virtual void resize(const QSizeF& size);
-  virtual void reset();
-  virtual GstElement *sinkElement();
+    virtual void paint(const QMatrix4x4& matrix, const QRectF& viewport);
+    virtual void resize(const QSizeF& size);
+    virtual void reset();
+    virtual GstElement *sinkElement();
 
-  QRectF renderArea();
-  QSizeF videoResolution();
+    QRectF renderArea();
+    QSizeF videoResolution();
 
-  bool needsNativePainting();
+    bool needsNativePainting();
 
 private slots:
-  void setVideoSize(const QSizeF& size);
+    void setVideoSize(const QSizeF& size);
 
 private:
-  static void frame_ready(GstElement *sink, int frame, QtCamViewfinderRendererNemo *r);
-  static void sink_notify(QtCamViewfinderRendererNemo *q, GObject *object, gboolean is_last_ref);
-  static void sink_caps_changed(GObject *obj, GParamSpec *pspec, QtCamViewfinderRendererNemo *q);
+    inline static void show_frame(GstVideoSink *, GstBuffer *buffer, QtCamViewfinderRendererNemo *r);
+    inline static void buffers_invalidated(GstVideoSink *sink, QtCamViewfinderRendererNemo *r);
+    static void sink_notify(QtCamViewfinderRendererNemo *q, GObject *object, gboolean is_last_ref);
+    static void sink_caps_changed(GObject *obj, GParamSpec *pspec, QtCamViewfinderRendererNemo *q);
 
-  void calculateProjectionMatrix(const QRectF& rect);
-  void createProgram();
-  void paintFrame(const QMatrix4x4& matrix, int frame);
-  void calculateVertexCoords();
+    void calculateProjectionMatrix(const QRectF& rect);
+    void createProgram();
+    void paintFrame(const QMatrix4x4& matrix);
+    void calculateVertexCoords();
 
-  void cleanup();
-  void updateCropInfo(const GstStructure *s, std::vector<GLfloat>& texCoords);
+    void cleanup();
+    void destroyCachedTextures();
+    void updateCropInfo(const GstStructure *s, std::vector<GLfloat>& texCoords);
 
-  GstElement *m_sink;
-  QMutex m_frameMutex;
-  int m_frame;
-  unsigned long m_id;
-  unsigned long m_notify;
-  bool m_needsInit;
-  QGLShaderProgram *m_program;
-  QMatrix4x4 m_projectionMatrix;
-  std::vector<GLfloat> m_vertexCoords;
-  std::vector<GLfloat> m_texCoords;
-  QSizeF m_size;
-  QSizeF m_videoSize;
-  QRectF m_renderArea;
-  EGLDisplay m_dpy;
-  bool m_displaySet;
-  QOpenGLExtension_OES_EGL_image *m_img;
+    struct CachedTexture
+    {
+        GstMemory *memory;
+        EGLImageKHR image;
+        GLuint textureId;
+    };
+
+    GstElement *m_sink;
+    GstBuffer *m_queuedBuffer;
+    GstBuffer *m_currentBuffer;
+    QMutex m_frameMutex;
+    gulong m_showFrameId;
+    gulong m_buffersInvalidatedId;
+    gulong m_notify;
+    bool m_needsInit;
+    QGLShaderProgram *m_program;
+    QMatrix4x4 m_projectionMatrix;
+    std::vector<GLfloat> m_vertexCoords;
+    std::vector<GLfloat> m_texCoords;
+    std::vector<CachedTexture> m_textures;
+    QSizeF m_size;
+    QSizeF m_videoSize;
+    QRectF m_renderArea;
+    EGLDisplay m_dpy;
+    bool m_displaySet;
+    bool m_buffersInvalidated;
+    bool m_bufferChanged;
+    QOpenGLExtension_OES_EGL_image *m_img;
 };
 
 #endif /* RENDERER_MEEGO_H */
