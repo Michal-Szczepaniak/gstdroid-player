@@ -1,32 +1,26 @@
-# NOTICE:
-#
-# Application name defined in TARGET has a corresponding QML filename.
-# If name defined in TARGET is changed, the following needs to be done
-# to match new name:
-#   - corresponding QML filename must be changed
-#   - desktop icon filename must be changed
-#   - desktop filename must be changed
-#   - icon definition filename in desktop file must be changed
-#   - translation filenames have to be changed
-
-# The name of your application
 TARGET = gstdroid-player
 
-CONFIG += sailfishapp
+CONFIG += c++2a link_pkgconfig sailfishapp
+
+QMAKE_CXXFLAGS += -std=c++2a
 
 PKGCONFIG += \
     gstreamer-1.0 \
     gstreamer-player-1.0 \
     gstreamer-video-1.0 \
+    glib-2.0 \
     nemo-gstreamer-interfaces-1.0 \
     Qt5OpenGL \
     Qt5OpenGLExtensions \
     egl \
     audioresource-qt \
 
+INCLUDEPATH += \
+    /usr/include/gstreamer-1.0 \
+    /usr/include/audioresource-qt
+
 SOURCES += src/gstdroid-player.cpp \
     src/player.cpp \
-    src/renderer.cpp \
     src/renderernemo.cpp
 
 DISTFILES += qml/gstdroid-player.qml \
@@ -49,5 +43,5 @@ TRANSLATIONS += translations/gstvideotest-de.ts
 
 HEADERS += \
     src/player.h \
-    src/renderer.h \
-    src/renderernemo.h
+    src/renderernemo.h \
+    src/quickviewhelper.h

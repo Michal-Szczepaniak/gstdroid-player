@@ -13,7 +13,8 @@ Page {
         VideoPlayer {
             id: player
             anchors.fill: parent
-            source: _source
+            videoSource: ""
+            audioSource: ""
         }
     }
 
@@ -27,15 +28,27 @@ Page {
         Button
         {
             text: "Play"
-            onClicked: player.play()
+            width: Theme.itemSizeSmall
+            onClicked: {
+                player.play()
+            }
         }
         Button {
             text: "Pause"
+            width: Theme.itemSizeSmall
             onClicked: player.pause()
         }
         Button {
             text: "Stop"
+            width: Theme.itemSizeSmall
             onClicked: player.stop()
+        }
+        Button {
+            text: "Seek"
+            width: Theme.itemSizeSmall
+            onClicked: {
+                player.seek(0)
+            }
         }
     }
 }

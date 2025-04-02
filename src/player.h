@@ -1,107 +1,134 @@
-// -*- c++ -*-
-
-/*
- * gst-droid
- *
- * Copyright (C) 2014 Mohammed Sameer <msameer@foolab.org>
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Library General Public License for more details.
- *
- * You should have received a copy of the GNU Library General Public
- * License along with this library; if not, write to the
- * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
- * Boston, MA 02110-1301, USA.
- */
-
 #ifndef VIDEO_PLAYER_H
 #define VIDEO_PLAYER_H
 
 #include <QQuickPaintedItem>
 #include <AudioResourceQt>
 #include <gst/gst.h>
+#include <QTimer>
+#include "renderernemo.h"
 
 class QtCamViewfinderRenderer;
+using Projection = RendererNemo::Projection;
 
 class VideoPlayer : public QQuickPaintedItem {
-  Q_OBJECT
+    Q_OBJECT
 
-  Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged);
-  Q_PROPERTY(qint64 duration READ duration NOTIFY durationChanged);
-  Q_PROPERTY(qint64 position READ position WRITE setPosition NOTIFY positionChanged);
-  Q_PROPERTY(State state READ state NOTIFY stateChanged);
-  Q_ENUMS(State);
-  Q_PROPERTY(quint32 volume READ volume WRITE setVolume NOTIFY volumeChanged);
+        Q_PROPERTY(QString videoSource READ getVideoSource WRITE setVideoSource NOTIFY videoSourceChanged);
+    Q_PROPERTY(QString audioSource READ getAudioSource WRITE setAudioSource NOTIFY audioSourceChanged);
+    Q_PROPERTY(bool audioOnlyMode READ getAudioOnlyMode WRITE setAudioOnlyMode NOTIFY audioOnlyModeChanged)
+    Q_PROPERTY(qint64 duration READ getDuration NOTIFY durationChanged);
+    Q_PROPERTY(qint64 position READ getPosition WRITE setPosition NOTIFY positionChanged);
+    Q_PROPERTY(State state READ getState NOTIFY stateChanged);
+    Q_PROPERTY(QString subtitle READ getSubtitle WRITE setSubtitle NOTIFY subtitleChanged);
+    Q_PROPERTY(QString displaySubtitle READ getDisplaySubtitle WRITE setDisplaySubtitle NOTIFY displaySubtitleChanged);
+    Q_PROPERTY(int projection READ getProjection WRITE setProjection NOTIFY projectionChanged);
+    Q_PROPERTY(float projectionX READ getProjectionX WRITE setProjectionX NOTIFY videoSourceChanged)
+    Q_PROPERTY(float projectionY READ getProjectionY WRITE setProjectionY NOTIFY videoSourceChanged)
+    Q_PROPERTY(bool isAvc1 READ isAvc1 WRITE setAvc1 NOTIFY avc1Changed)
+    Q_ENUMS(State);
 
-public:
-  VideoPlayer(QQuickItem *parent = 0);
-  ~VideoPlayer();
+        public:
+        VideoPlayer(QQuickItem *parent = 0);
+    ~VideoPlayer();
 
-  virtual void componentComplete();
-  virtual void classBegin();
+        virtual void componentComplete();
+    virtual void classBegin();
 
-  void paint(QPainter *painter);
+        void paint(QPainter *painter);
 
-  QUrl source() const;
-  void setSource(const QUrl& source);
+        QString getVideoSource() const;
+    void setVideoSource(const QString& videoSource);
+    QString getAudioSource() const;
+    void setAudioSource(const QString& audioSource);
+    qint64 getDuration() const;
+    qint64 getPosition();
+    void setPosition(qint64 position);
+    QString getSubtitle() const;
+    void setSubtitle(QString subtitle);
+    QString getDisplaySubtitle() const;
+    void setDisplaySubtitle(QString subtitle);
+    int getProjection() const;
+    void setProjection(int projection);
+    float getProjectionX() const;
+    void setProjectionX(float projectionX);
+    float getProjectionY() const;
+    void setProjectionY(float projectionY);
+    bool isAvc1() const;
+    void setAvc1(bool avc1);
 
-  qint64 duration() const;
-  qint64 position();
-  void setPosition(qint64 position);
+        Q_INVOKABLE bool pause();
+    Q_INVOKABLE bool play();
+    Q_INVOKABLE bool seek(qint64 offset);
+    Q_INVOKABLE bool stop();
+    void setAudioOnlyMode(bool audioOnlyMode);
+    bool getAudioOnlyMode() const;
+    Q_INVOKABLE bool setPlaybackSpeed(double speed);
 
-  Q_INVOKABLE bool pause();
-  Q_INVOKABLE bool play();
-  Q_INVOKABLE bool seek(qint64 offset);
-  Q_INVOKABLE bool stop();
+        typedef enum {
+            StateStopped,
+            StatePaused,
+            StatePlaying,
+            StateBuffering,
+            } State;
 
-  typedef enum {
-    StateStopped,
-    StatePaused,
-    StatePlaying,
-  } State;
-
-  State state() const;
-
-  quint32 volume();
-  void setVolume(quint32 volume);
+    State getState() const;
 
 signals:
-  void sourceChanged();
-  void durationChanged();
-  void positionChanged();
-  void error(const QString& message, int code, const QString& debug);
-  void stateChanged();
-  void volumeChanged();
+    void videoSourceChanged();
+    void audioSourceChanged();
+    void durationChanged();
+    void positionChanged();
+    void error(const QString& message, int code, const QString& debug);
+    void stateChanged();
+    void subtitleChanged();
+    void displaySubtitleChanged();
+    void projectionChanged();
+    void audioOnlyModeChanged();
+    void avc1Changed();
 
 protected:
-  void geometryChanged(const QRectF& newGeometry, const QRectF& oldGeometry);
+    void geometryChanged(const QRectF& newGeometry, const QRectF& oldGeometry);
 
 private slots:
-  void updateRequested();
+    void updateRequested();
+    void updateBufferingState(int percent, QString name);
 
 private:
-  static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data);
-  static void on_volume_changed(GObject *object, GParamSpec *pspec, gpointer user_data);
+    static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data);
+    static void cbNewPad(GstElement *element, GstPad *pad, gpointer data);
+    static void cbNewVideoPad(GstElement *element, GstPad *pad, gpointer data);
+    static GstFlowReturn cbNewSample(GstElement *sink, gpointer *data);
 
-  bool setState(const State& state);
-  bool setPaused(int flags);
+    bool setState(const State& state);
 
-  QtCamViewfinderRenderer *m_renderer;
-  AudioResourceQt::AudioResource m_audio_resource;
-  QUrl m_url;
+    RendererNemo *_renderer;
+    AudioResourceQt::AudioResource _audioResource;
+    QString _videoUrl;
+    QString _audioUrl;
 
-  GstElement *m_bin;
-  State m_state;
-  QTimer *m_timer;
-  qint64 m_pos;
-  bool m_created;
+    GstElement *_pipeline;
+    GstElement *_videoSource;
+    GstElement *_audioSource;
+    GstElement *_pulsesink;
+    GstElement *_subParse;
+    GstElement *_appSink;
+    GstElement *_subSource;
+    GstElement *_scaletempo;
+    State _state;
+    State _previousState;
+    qint64 _bufferTimestamp;
+    QTimer *_timer;
+    QTimer _bufferTimeoutTimer;
+    qint64 _pos;
+    double _playbackSpeed;
+    bool _created;
+    bool _audioOnlyMode = false;
+    bool _avc1 = false;
+    QString _currentSubtitle;
+    QString _subtitle;
+    quint64 _subtitleEnd;
+    QHash<QString, int> _bufferingProgress;
+    Projection _projection = Projection::Flat;
 };
 
 #endif /* VIDEO_PLAYER_H */
