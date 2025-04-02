@@ -13,8 +13,8 @@ Page {
         VideoPlayer {
             id: player
             anchors.fill: parent
-            videoSource: ""
-            audioSource: ""
+            videoSource: "https://github.com/Michal-Szczepaniak/gstdroid-player/raw/refs/heads/master/video.mp4"
+            audioSource: "https://github.com/Michal-Szczepaniak/gstdroid-player/raw/refs/heads/master/audio.webm"
         }
     }
 

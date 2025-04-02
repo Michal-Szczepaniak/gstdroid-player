@@ -726,11 +726,10 @@ void VideoPlayer::updateRequested() {
 
 void VideoPlayer::updateBufferingState(int percent, QString name)
 {
-    qDebug() << percent << " " << name;
     _bufferingProgress[name] = percent;
 
     for (int p : _bufferingProgress) {
-        if (p < 100) {
+        if (_audioOnlyMode ? (p < 2) : (p < 5)) {
             if (_state != VideoPlayer::StateBuffering) {
                 _previousState = _state;
             }
