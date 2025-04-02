@@ -13,8 +13,8 @@ Page {
         VideoPlayer {
             id: player
             anchors.fill: parent
-            videoSource: "https://github.com/Michal-Szczepaniak/gstdroid-player/raw/refs/heads/master/video.mp4"
-            audioSource: "https://github.com/Michal-Szczepaniak/gstdroid-player/raw/refs/heads/master/audio.webm"
+            videoSource: _videoSource
+            audioSource: _audioSource
         }
     }
 
@@ -47,7 +47,7 @@ Page {
             text: "Seek"
             width: Theme.itemSizeSmall
             onClicked: {
-                player.seek(0)
+                player.seek(42300)
             }
         }
     }

@@ -15,6 +15,9 @@ int main(int argc, char *argv[])
 
     QuickViewHelper::setView(view.data());
 
+    view->rootContext()->setContextProperty("_videoSource", QUrl::fromUserInput(app->arguments().at(1)));
+    view->rootContext()->setContextProperty("_audioSource", QUrl::fromUserInput(app->arguments().at(2)));
+
     qmlRegisterType<VideoPlayer>("VideoPlayer", 1, 0, "VideoPlayer");
 
     view->setSource(SailfishApp::pathTo("qml/gstdroid-player.qml"));
